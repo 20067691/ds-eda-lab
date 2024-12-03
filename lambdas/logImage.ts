@@ -2,12 +2,13 @@
 import { SQSHandler } from "aws-lambda";
 import {
   GetObjectCommand,
-  GetObjectCommandInput,
   S3Client,
-
 } from "@aws-sdk/client-s3";
-import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
-
+import {
+  DynamoDBClient,
+  PutItemCommand,
+  DeleteItemCommand,
+} from "@aws-sdk/client-dynamodb";
 
 const s3 = new S3Client();
 const dynamodb = new DynamoDBClient({});
@@ -36,46 +37,55 @@ export const handler: SQSHandler = async (event) => {
         for (const messageRecord of snsMessage.Records) {
           const s3e = messageRecord.s3;
           const srcBucket = s3e.bucket.name;
-          // Decode the object key
           const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
+          const eventName = messageRecord.eventName;
 
-          console.log(`Processing file: s3://${srcBucket}/${srcKey}`);
+          console.log(`Processing file: s3://${srcBucket}/${srcKey}, Event: ${eventName}`);
 
-          // Validate file type
-          if (!isValidImageType(srcKey)) {
-            throw new Error(`Invalid file type for object: ${srcKey}`);
+          if (eventName.startsWith("ObjectCreated")) {
+            // Handle ObjectCreated events
+            console.log(`Handling upload for: ${srcKey}`);
+
+            // Validate file type
+            if (!isValidImageType(srcKey)) {
+              throw new Error(`Invalid file type for object: ${srcKey}`);
+            }
+
+            // Log valid image metadata to DynamoDB
+            const dynamoParams = {
+              TableName: TABLE_NAME,
+              Item: {
+                fileName: { S: srcKey }, // Primary key
+                uploadTime: { S: new Date().toISOString() },
+                bucketName: { S: srcBucket },
+                status: { S: "valid" },
+              },
+            };
+
+            await dynamodb.send(new PutItemCommand(dynamoParams));
+            console.log(`Image metadata logged to DynamoDB for: ${srcKey}`);
+          } else if (eventName.startsWith("ObjectRemoved")) {
+            // Handle ObjectRemoved events
+            console.log(`Handling deletion for: ${srcKey}`);
+
+            const deleteParams = {
+              TableName: TABLE_NAME,
+              Key: {
+                fileName: { S: srcKey }, // Primary key
+              },
+            };
+
+            await dynamodb.send(new DeleteItemCommand(deleteParams));
+            console.log(`Deleted item for ${srcKey} from DynamoDB`);
+          } else {
+            console.log(`Unhandled event type: ${eventName}`);
           }
-
-          // Fetch image from S3 (if needed)
-          const params = {
-            Bucket: srcBucket,
-            Key: srcKey,
-          };
-          const objectData = await s3.send(new GetObjectCommand(params));
-
-          console.log("Image downloaded successfully.");
-
-          // Log valid image metadata to DynamoDB
-          const dynamoParams = {
-            TableName: TABLE_NAME,
-            Item: {
-              fileName: { S: srcKey }, // Primary key
-              uploadTime: { S: new Date().toISOString() },
-              bucketName: { S: srcBucket },
-              status: { S: "valid" },
-            },
-          };
-
-          await dynamodb.send(new PutItemCommand(dynamoParams));
-          console.log(`Image metadata logged to DynamoDB for: ${srcKey}`);
         }
       }
     } catch (error) {
       console.error("Error processing file:", error);
       // Errors will result in the message being reprocessed or sent to the DLQ
-
       throw error;
-      
     }
   }
 };

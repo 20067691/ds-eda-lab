@@ -151,6 +151,12 @@ export class EDAAppStack extends cdk.Stack {
       new s3n.SnsDestination(newImageTopic)
     );
 
+    // Add event notifications to S3 bucket for SNS topic (DELETE)
+    imagesBucket.addEventNotification(
+      s3.EventType.OBJECT_REMOVED_DELETE,
+      new s3n.SnsDestination(newImageTopic)
+    );
+
     // Add the SQS event source to the Lambda function
     rejectionMailerFn.addEventSource(
       new eventsources.SqsEventSource(dlq, {
