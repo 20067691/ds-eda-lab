@@ -1,4 +1,4 @@
-import { SNSHandler } from "aws-lambda";
+import { DynamoDBStreamHandler } from "aws-lambda";
 import { SES_EMAIL_FROM, SES_EMAIL_TO, SES_REGION } from "../env";
 import {
   SESClient,
@@ -8,8 +8,7 @@ import {
 
 if (!SES_EMAIL_TO || !SES_EMAIL_FROM || !SES_REGION) {
   throw new Error(
-    "Please add the SES_EMAIL_TO, SES_EMAIL_FROM and SES_REGION environment variables in an env.js file located in the root directory"
-
+    "Please add the SES_EMAIL_TO, SES_EMAIL_FROM, and SES_REGION environment variables."
   );
 }
 
@@ -21,56 +20,49 @@ type ContactDetails = {
 
 const client = new SESClient({ region: SES_REGION });
 
-export const handler: SNSHandler = async (event) => {
-  console.log("Received SNS event:", JSON.stringify(event, null, 2));
+export const handler: DynamoDBStreamHandler = async (event) => {
+  console.log("Received DynamoDB Stream event:", JSON.stringify(event, null, 2));
 
   for (const record of event.Records) {
     try {
-      console.log("Processing record:", JSON.stringify(record, null, 2));
+      // Only process "INSERT" events
+      if (record.eventName === "INSERT" && record.dynamodb?.NewImage) {
+        const newItem = record.dynamodb.NewImage;
 
-      // Extract SNS message
-      const snsMessageString = record.Sns.Message;
-      console.log("Raw SNS Message:", snsMessageString);
+        // Extract details from the new DynamoDB item
+        const fileName = newItem.fileName?.S;
+        const bucketName = newItem.bucketName?.S;
 
-      // Extract SNS message
-      const snsMessage = JSON.parse(record.Sns.Message);
-
-      console.log("Parsed SNS message:", JSON.stringify(snsMessage, null, 2));
-
-
-      // Process S3-related information from the SNS message
-      if (snsMessage.Records) {
-        for (const s3Record of snsMessage.Records) {
-          const s3e = s3Record.s3;
-          const srcBucket = s3e.bucket.name;
-          const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
-
-          console.log(`Processing image: s3://${srcBucket}/${srcKey}`);
-
-          // Compose email details
-          const { name, email, message }: ContactDetails = {
-            name: "The Photo Album",
-            email: SES_EMAIL_TO,
-            message: `We received your image. It is located at: s3://${srcBucket}/${srcKey}`,
-          };
-
-          // Send email
-          const params = sendEmailParams({ name, email, message });
-          await client.send(new SendEmailCommand(params));
-
-          console.log(`Email sent successfully for object: ${srcKey}`);
+        if (!fileName || !bucketName) {
+          console.warn("Missing required attributes in DynamoDB stream record.");
+          continue;
         }
+
+        console.log(`Processing new image: ${fileName} in bucket: ${bucketName}`);
+
+        // Compose email details
+        const { name, email, message }: ContactDetails = {
+          name: "The Photo Album",
+          email: SES_EMAIL_FROM,
+          message: `Your image "${fileName}" has been successfully uploaded to the bucket "${bucketName}".`,
+        };
+
+        // Send email
+        const params = sendEmailParams({ name, email, message });
+        await client.send(new SendEmailCommand(params));
+
+        console.log(`Email sent successfully for item: ${fileName}`);
       } else {
-        console.warn("No S3 records found in SNS message.");
+        console.log(`Skipping non-INSERT event or event without NewImage: ${record.eventName}`);
       }
     } catch (error) {
-      console.error("Error processing record:", error);
+      console.error("Error processing DynamoDB Stream record:", error);
     }
   }
 };
 
-function sendEmailParams({ name, email, message }: ContactDetails) {
-  const parameters: SendEmailCommandInput = {
+function sendEmailParams({ name, email, message }: ContactDetails): SendEmailCommandInput {
+  return {
     Destination: {
       ToAddresses: [SES_EMAIL_TO],
     },
@@ -83,12 +75,11 @@ function sendEmailParams({ name, email, message }: ContactDetails) {
       },
       Subject: {
         Charset: "UTF-8",
-        Data: `New image Upload`,
+        Data: `Image Upload Confirmation`,
       },
     },
     Source: SES_EMAIL_FROM,
   };
-  return parameters;
 }
 
 function getHtmlContent({ name, email, message }: ContactDetails) {
@@ -105,4 +96,3 @@ function getHtmlContent({ name, email, message }: ContactDetails) {
     </html> 
   `;
 }
-

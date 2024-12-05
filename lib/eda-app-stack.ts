@@ -52,6 +52,7 @@ export class EDAAppStack extends cdk.Stack {
     const imageTable = new dynamodb.Table(this, "ImageTable", {
       partitionKey: { name: "fileName", type: dynamodb.AttributeType.STRING },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
+      stream: dynamodb.StreamViewType.NEW_IMAGE
     });
 
 
@@ -89,16 +90,11 @@ export class EDAAppStack extends cdk.Stack {
       }
     });
 
-    //SES permissions to the Confirmation Mailer Lambda
-    confirmationMailerFn.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          "ses:SendEmail",
-          "ses:SendRawEmail",
-          "ses:SendTemplatedEmail",
-        ],
-        resources: ["*"],
+    // Add DynamoDB Stream as the event source for the Confirmation Mailer Lambda
+    confirmationMailerFn.addEventSource(
+      new eventsources.DynamoEventSource(imageTable, {
+        startingPosition: lambda.StartingPosition.TRIM_HORIZON, // Start processing from the beginning of the stream
+        batchSize: 5, // Process up to 5 records at a time
       })
     );
 
@@ -117,6 +113,19 @@ export class EDAAppStack extends cdk.Stack {
 
     // Grant DLQ permissions to the Rejection Mailer Lambda
     dlq.grantConsumeMessages(rejectionMailerFn);
+
+    // SES permissions to the Confirmation Mailer Lambda
+    confirmationMailerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "ses:SendEmail",
+          "ses:SendRawEmail",
+          "ses:SendTemplatedEmail"
+        ],
+        resources: ["*"],
+      })
+    );
 
     // SES permissions to the Rejection Mailer Lambda
     rejectionMailerFn.addToRolePolicy(
