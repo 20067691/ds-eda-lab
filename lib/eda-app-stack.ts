@@ -90,11 +90,11 @@ export class EDAAppStack extends cdk.Stack {
       }
     });
 
-    // Add DynamoDB Stream as the event source for the Confirmation Mailer Lambda
+    // DynamoDB Stream as the event source for the Confirmation Mailer Lambda
     confirmationMailerFn.addEventSource(
       new eventsources.DynamoEventSource(imageTable, {
-        startingPosition: lambda.StartingPosition.TRIM_HORIZON, // Start processing from the beginning of the stream
-        batchSize: 5, // Process up to 5 records at a time
+        startingPosition: lambda.StartingPosition.TRIM_HORIZON, 
+        batchSize: 5, 
       })
     );
 
@@ -103,7 +103,7 @@ export class EDAAppStack extends cdk.Stack {
       runtime: lambda.Runtime.NODEJS_18_X,
       entry: `${__dirname}/../lambdas/rejectionMailer.ts`,
       memorySize: 1024,
-      timeout: cdk.Duration.seconds(10),
+      timeout: cdk.Duration.seconds(5),
       environment: {
         SES_EMAIL_FROM: process.env.SES_EMAIL_FROM!,
         SES_EMAIL_TO: process.env.SES_EMAIL_TO!,
@@ -140,7 +140,7 @@ export class EDAAppStack extends cdk.Stack {
       })
     );
 
-    // Sunscribe the SQS queue to the SNS topic 
+    // Subscribe the SQS queue to the SNS topic 
     newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue));
 
     // Subscribe the Confirmation Mailer Lambda to the SNS topic
@@ -177,21 +177,26 @@ export class EDAAppStack extends cdk.Stack {
     // Update Table Lambda function
     const updateTableFn = new lambdanode.NodejsFunction(this, "UpdateTableFn", {
       runtime: lambda.Runtime.NODEJS_18_X,
-      entry: `${__dirname}/../lambdas/updateTable.ts`, // Path to the Update Lambda
+      entry: `${__dirname}/../lambdas/updateTable.ts`, 
       timeout: cdk.Duration.seconds(15),
       memorySize: 128,
       environment: {
-        IMAGE_TABLE_NAME: imageTable.tableName, // Pass the DynamoDB table name to the Lambda
+        IMAGE_TABLE_NAME: imageTable.tableName, 
       },
     });
 
     // Grant permissions to the Update Table Lambda to write to the DynamoDB table
     imageTable.grantWriteData(updateTableFn);
 
-    // Add SNS subscription for the Update Table Lambda
-    newImageTopic.addSubscription(
-      new subs.LambdaSubscription(updateTableFn)
-    );
+    // Add SNS subscription for the Update Table Lambda + filter
+    newImageTopic.addSubscription(new subs.LambdaSubscription(updateTableFn, {
+      filterPolicy: {
+        metadata_type: sns.SubscriptionFilter.stringFilter({
+          allowlist: ["Caption", "Date", "Photographer"],
+        }),
+      },
+    }));
+    
 
 
     // Output
