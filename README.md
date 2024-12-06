@@ -15,9 +15,9 @@ __YouTube Demo link__ - [The URL of the video demonstration of the app.]
 ### Phase 2 (if relevant).
 
 
-+ Confirmation Mailer - Partially working.  No filtering.
-+ Rejection Mailer - Fully implemented 
-+ Log Image - Fully implemented 
++ Confirmation Mailer - Fully implemented.
++ Rejection Mailer - Fully implemented.
++ Log Image - Fully implemented. 
 + Update Table -  Fully implemented. 
 
 ### Phase 3 (if relevant).

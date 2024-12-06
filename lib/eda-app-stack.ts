@@ -93,7 +93,7 @@ export class EDAAppStack extends cdk.Stack {
     // DynamoDB Stream as the event source for the Confirmation Mailer Lambda
     confirmationMailerFn.addEventSource(
       new eventsources.DynamoEventSource(imageTable, {
-        startingPosition: lambda.StartingPosition.TRIM_HORIZON, 
+        startingPosition: lambda.StartingPosition.LATEST, 
         batchSize: 5, 
       })
     );
@@ -140,13 +140,22 @@ export class EDAAppStack extends cdk.Stack {
       })
     );
 
-    // Subscribe the SQS queue to the SNS topic 
-    newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue));
+    // Subscribe the SQS queue to the SNS topic + filer 
+    newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue, {
+      filterPolicyWithMessageBody: {
+        Records: sns.FilterOrPolicy.policy({
+          eventName: sns.FilterOrPolicy.filter(
+            sns.SubscriptionFilter.stringFilter({
+            allowlist: ["ObjectCreated:Put", "ObjectRemoved:Delete"]
+          })),
+        }),
+      },
+    }));
 
-    // Subscribe the Confirmation Mailer Lambda to the SNS topic
-    newImageTopic.addSubscription(
-      new subs.LambdaSubscription(confirmationMailerFn)
-    );
+    // // Subscribe the Confirmation Mailer Lambda to the SNS topic
+    // newImageTopic.addSubscription(
+    //   new subs.LambdaSubscription(confirmationMailerFn)
+    // );
 
 
     // Add SQS event source to Log Image Lambda
@@ -207,12 +216,7 @@ export class EDAAppStack extends cdk.Stack {
     new cdk.CfnOutput(this, "SNS Topic ARN", {
       value: newImageTopic.topicArn,
     });
-    new cdk.CfnOutput(this, "Image Processing Queue URL", {
-      value: imageProcessQueue.queueUrl,
-    });
-    new cdk.CfnOutput(this, "DLQ URL", {
-      value: dlq.queueUrl,
-    });
+    
     new cdk.CfnOutput(this, "DynamoDB Table Name", {
       value: imageTable.tableName,
     });
