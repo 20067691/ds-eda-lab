@@ -152,10 +152,6 @@ export class EDAAppStack extends cdk.Stack {
       },
     }));
 
-    // // Subscribe the Confirmation Mailer Lambda to the SNS topic
-    // newImageTopic.addSubscription(
-    //   new subs.LambdaSubscription(confirmationMailerFn)
-    // );
 
 
     // Add SQS event source to Log Image Lambda
@@ -216,7 +212,7 @@ export class EDAAppStack extends cdk.Stack {
     new cdk.CfnOutput(this, "SNS Topic ARN", {
       value: newImageTopic.topicArn,
     });
-    
+
     new cdk.CfnOutput(this, "DynamoDB Table Name", {
       value: imageTable.tableName,
     });

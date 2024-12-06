@@ -2,9 +2,8 @@
 
 __Name:__ Dean Sinnott
 
-__YouTube Demo link__ - [The URL of the video demonstration of the app.]
+__YouTube Demo link__ - https://youtu.be/DCxrV3GHQiU
 
-[ Note: The video must include an audio.]
 
 ### Phase 1.
 
